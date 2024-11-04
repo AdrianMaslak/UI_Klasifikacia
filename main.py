@@ -2,23 +2,19 @@ import random
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-from collections import defaultdict
+from scipy.spatial import KDTree
 
 # Rozmery 2D priestoru
 SPACE_SIZE = 5000
-GRID_SIZE = 1000  # Veľkosť jedného štvorca na rozdelenie priestoru
 
 # Počet tried
 NUM_CLASSES = 4
 
-# Počet bodov na triedu
-NUM_POINTS_PER_CLASS = 5
-
 # Počet generovaných bodov pre testovanie
-NUM_GENERATED_POINTS = 100 * NUM_CLASSES
+NUM_GENERATED_POINTS = 100 * NUM_CLASSES  # Nastavené na 10 000 bodov pre každú triedu
 
 # Možné hodnoty pre parameter k
-K = 1
+K = 3
 
 # Počiatočné body
 initial_points = {
@@ -32,39 +28,11 @@ initial_points = {
 def euclidean_distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-# Funkcia na priradenie bodu do štvorca
-def get_grid_coords(point):
-    x, y = point
-    grid_x = int(x // GRID_SIZE)
-    grid_y = int(y // GRID_SIZE)
-    return (grid_x, grid_y)
-
-# Funkcia na klasifikáciu nového bodu pomocou k-NN algoritmu s optimalizovaným vyhľadávaním
-def classify(new_point, k, grid, all_points):
-    grid_coords = get_grid_coords(new_point)
-    
-    # Zoznam susedných štvorcov, ktoré kontrolujeme
-    neighbor_squares = [
-        (grid_coords[0] + dx, grid_coords[1] + dy)
-        for dx in range(-1, 2) for dy in range(-1, 2)
-    ]
-    
-    # Zber bodov z daného štvorca a susedných štvorcov
-    potential_points = []
-    for square in neighbor_squares:
-        potential_points.extend(grid.get(square, []))
-    
-    if not potential_points:
-        potential_points = all_points  # fallback, ak v okolí nie sú body
-    
-    distances = []
-    for point in potential_points:
-        distance = euclidean_distance(new_point, point['coords'])
-        distances.append({'distance': distance, 'class': point['class']})
-    
-    distances.sort(key=lambda x: x['distance'])
-    k_nearest_neighbors = distances[:k]
-    classes = [neighbor['class'] for neighbor in k_nearest_neighbors]
+# Funkcia na klasifikáciu nového bodu pomocou k-NN algoritmu s použitím k-d stromu
+def classify(new_point, k, kd_tree, points):
+    distances, indexes = kd_tree.query(new_point, k)
+    neighbors = [points[i] for i in indexes]
+    classes = [neighbor['class'] for neighbor in neighbors]
     return max(set(classes), key=classes.count)
 
 # Funkcia na generovanie nových bodov
@@ -106,15 +74,19 @@ def plot_classification(training_points, generated_points, results, k):
 
 # Hlavná funkcia
 def main():
-    # Príprava trénovacích bodov a vytvorenie mriežky
-    training_points = []
-    grid = defaultdict(list)
+    # Vyberte hodnotu k pre zobrazenie
+    selected_k = 3  # Vyberte k z K_VALUES: 1, 3, 7, 15
 
-    for class_name, coords_list in initial_points.items():
-        for coords in coords_list:
-            point = {'coords': coords, 'class': class_name}
-            training_points.append(point)
-            grid[get_grid_coords(coords)].append(point)
+    # Príprava trénovacích bodov
+    training_points = []
+    coords_list = []
+    for class_name, coords_list_class in initial_points.items():
+        for coords in coords_list_class:
+            training_points.append({'coords': coords, 'class': class_name})
+            coords_list.append(coords)
+
+    # Vytvorenie k-d stromu z tréningových bodov
+    kd_tree = KDTree(coords_list)
     
     # Generovanie bodov na klasifikáciu
     generated_points = []
@@ -125,11 +97,11 @@ def main():
     # Klasifikácia pomocou vybranej hodnoty k
     results = []
     for point in generated_points:
-        classification = classify(point, K, grid, training_points)
+        classification = classify(point, selected_k, kd_tree, training_points)
         results.append(classification)
     
     # Zobrazenie grafu pre vybranú hodnotu k
-    plot_classification(training_points, generated_points, results, K)
+    plot_classification(training_points, generated_points, results, selected_k)
 
     # Zobrazenie výsledkov - počet klasifikovaných bodov pre každú triedu
     count_R = results.count('R')
